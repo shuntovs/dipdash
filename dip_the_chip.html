@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Dip the Chip - Flappy Style</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #eee; }
+    #startScreen, #scoreboard { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-family: Arial, sans-serif; text-align: center; z-index: 10; }
+    #startScreen { font-size: 24px; }
+    #scoreboard { top: 10%; font-size: 18px; transform: translateX(-50%); display: none; }
+    canvas { display: block; margin: 0 auto; background: #fff; }
+    #startScreen button { padding: 10px 20px; font-size: 18px; margin-top: 20px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div id="startScreen">
+    <div id="startMessage">Dip the Chip</div>
+    <div>Tap / Click or press Space to flap</div>
+    <button id="startBtn">Start Game</button>
+  </div>
+  <div id="scoreboard">Score: 0 | Chip: </div>
+  <canvas id="gameCanvas" width="800" height="600"></canvas>
+  <script>
+    (() => {
+      const canvas = document.getElementById('gameCanvas');
+      const ctx = canvas.getContext('2d');
+      const width = canvas.width;
+      const height = canvas.height;
+
+      // Settings
+      const segmentStep = 120;
+      const segmentWidth = 100;
+      const sauceHeight = 50;
+      const sauceSpeed = 2;
+      const gravity = 0.5;
+      const lift = -8;
+      const chipRadius = 20;
+
+      // Types and colors
+      const chipTypes = ['potato','tortilla','wavy'];
+      const chipDips = { potato: 'ajvar', tortilla: 'cheese', wavy: 'onion' };
+      const chipColor = { potato: '#ff0000', tortilla: '#f5d291', wavy: '#0000ff' };
+      const dipColor = { ajvar: '#ff0000', cheese: '#ffff00', onion: '#0000ff' };
+
+      // Game variables
+      let score = 0;
+      let chip = { x: width/4, y: height/2, velocity: 0, type: '', color: '', dip: '' };
+      const segments = [];
+      let gameStarted = false;
+      let animationId;
+
+      function initSegments() {
+        segments.length = 0;
+        const types = ['ajvar','cheese','onion'];
+        const count = Math.ceil(width/segmentStep) + 2;
+        for (let i = 0; i < count; i++) {
+          segments.push({ x: i * segmentStep, type: types[i % types.length] });
+        }
+      }
+
+      function resetChip() {
+        const type = chipTypes[Math.floor(Math.random() * chipTypes.length)];
+        chip.type = type;
+        chip.color = chipColor[type];
+        chip.dip = chipDips[type];
+        chip.x = width/4;
+        chip.y = height/2;
+        chip.velocity = 0;
+        updateScoreboard();
+      }
+
+      function updateScoreboard() {
+        const name = chip.type.charAt(0).toUpperCase() + chip.type.slice(1);
+        document.getElementById('scoreboard').innerText = `Score: ${score} | Chip: ${name}`;
+      }
+
+      function updateSauce() {
+        segments.forEach(seg => {
+          seg.x -= sauceSpeed;
+          if (seg.x + segmentStep < 0) seg.x += segments.length * segmentStep;
+        });
+      }
+
+      function endGame() {
+        gameStarted = false;
+        cancelAnimationFrame(animationId);
+        document.getElementById('startScreen').style.display = 'block';
+        document.getElementById('scoreboard').style.display = 'none';
+        document.getElementById('startMessage').innerText = `Game Over! Final Score: ${score}`;
+      }
+
+      function checkDip() {
+        const cx = chip.x;
+        let hitSeg = null;
+        for (const seg of segments) {
+          if (cx >= seg.x && cx <= seg.x + segmentWidth) {
+            hitSeg = seg;
+            break;
+          }
+        }
+        if (hitSeg) {
+          if (hitSeg.type === chip.dip) {
+            score++;
+          } else {
+            endGame();
+            return;
+          }
+        }
+        updateScoreboard();
+      }
+
+      function update() {
+        chip.velocity += gravity;
+        chip.y += chip.velocity;
+        if (chip.y + chipRadius >= height - sauceHeight) {
+          checkDip();
+          if (!gameStarted) return;
+          resetChip();
+        }
+        if (chip.y - chipRadius < 0) {
+          chip.y = chipRadius;
+          chip.velocity = 0;
+        }
+        updateSauce();
+      }
+
+      function drawChip() {
+        ctx.fillStyle = chip.color;
+        ctx.strokeStyle = '#000';
+        ctx.beginPath();
+        if (chip.type === 'potato') {
+          // Heart shape
+          const x = chip.x, y = chip.y;
+          ctx.moveTo(x, y + chipRadius/2);
+          ctx.bezierCurveTo(x + chipRadius, y - chipRadius/2, x + chipRadius*1.5, y + chipRadius/2, x, y + chipRadius*1.5);
+          ctx.bezierCurveTo(x - chipRadius*1.5, y + chipRadius/2, x - chipRadius, y - chipRadius/2, x, y + chipRadius/2);
+          ctx.fill(); ctx.stroke();
+        } else if (chip.type === 'tortilla') {
+          // Triangle
+          ctx.moveTo(chip.x, chip.y - chipRadius);
+          ctx.lineTo(chip.x - chipRadius, chip.y + chipRadius);
+          ctx.lineTo(chip.x + chipRadius, chip.y + chipRadius);
+          ctx.closePath(); ctx.fill(); ctx.stroke();
+        } else {
+          // Circle
+          ctx.arc(chip.x, chip.y, chipRadius, 0, Math.PI * 2);
+          ctx.fill(); ctx.stroke();
+        }
+      }
+
+      function draw() {
+        ctx.clearRect(0, 0, width, height);
+        segments.forEach(seg => {
+          ctx.fillStyle = dipColor[seg.type];
+          ctx.fillRect(seg.x, height - sauceHeight, segmentWidth, sauceHeight);
+        });
+        drawChip();
+      }
+
+      function gameLoop() {
+        update(); draw();
+        if (gameStarted) animationId = requestAnimationFrame(gameLoop);
+      }
+
+      function flap() {
+        if (!gameStarted) return;
+        chip.velocity = lift;
+      }
+
+      function startGame() {
+        document.getElementById('startScreen').style.display = 'none';
+        document.getElementById('scoreboard').style.display = 'block';
+        document.getElementById('startMessage').innerText = 'Dip the Chip';
+        gameStarted = true;
+        score = 0;
+        initSegments();
+        resetChip();
+        gameLoop();
+      }
+
+      // Event listeners
+      document.getElementById('startBtn').addEventListener('click', startGame);
+      canvas.addEventListener('mousedown', () => { if (!gameStarted) startGame(); flap(); });
+      canvas.addEventListener('touchstart', e => { e.preventDefault(); if (!gameStarted) startGame(); flap(); });
+      document.addEventListener('keydown', e => { if (e.code === 'Space') { if (!gameStarted) startGame(); flap(); } });
+    })();
+  </script>
+</body>
+</html>
