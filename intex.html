@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dip Dash</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #ffeabf;
+    }
+    canvas {
+      display: block;
+    }
+    #startScreen, #restartScreen {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.75);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      font-family: Arial, sans-serif;
+      z-index: 10;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 20px;
+      cursor: pointer;
+      margin-top: 20px;
+    }
+    #progressBarContainer {
+      position: absolute;
+      top: 10px;
+      right: 20px;
+      width: 200px;
+      height: 20px;
+      background: #ddd;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    #progressBar {
+      width: 0%;
+      height: 100%;
+      background: linear-gradient(90deg, #4caf50, #ffeb3b, #f44336);
+    }
+  </style>
+</head>
+<body>
+  <div id="startScreen">
+    <h1>🎮 Dip Dash</h1>
+    <p>Tap to flap! Match the chip to the right sauce.</p>
+    <button onclick="startGame()">Start Game</button>
+  </div>
+  <div id="restartScreen" style="display: none;">
+    <h1>Game Over</h1>
+    <p>Your final score: <span id="finalScore">0</span></p>
+    <button onclick="restartGame()">Play Again</button>
+  </div>
+
+  <div id="progressBarContainer">
+    <div id="progressBar"></div>
+  </div>
+
+  <audio id="hitSound" src="https://cdn.pixabay.com/download/audio/2022/03/15/audio_6938b39156.mp3?filename=pop-94319.mp3"></audio>
+  <audio id="missSound" src="https://cdn.pixabay.com/download/audio/2022/03/15/audio_a2269f2c0d.mp3?filename=fail-144746.mp3"></audio>
+  <audio id="bgMusic" src="https://cdn.pixabay.com/download/audio/2022/10/10/audio_b6538b17a7.mp3?filename=rock-beat-117203.mp3" loop></audio>
+
+  <canvas id="gameCanvas"></canvas>
+
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const hitSound = document.getElementById("hitSound");
+    const missSound = document.getElementById("missSound");
+    const bgMusic = document.getElementById("bgMusic");
+    const progressBar = document.getElementById("progressBar");
+    bgMusic.volume = 0.5;
+
+    const chipTypes = [
+      { name: "Tortilla", color: "#f4c542", sauce: "cheese", shape: "triangle" },
+      { name: "Wavy", color: "#ff9800", sauce: "onion", shape: "wave" },
+      { name: "Regular", color: "#e91e63", sauce: "ajvar", shape: "circle" }
+    ];
+
+    const sauceMap = {
+      cheese: { x: 200, y: canvas.height - 100, color: "#ffeb3b", label: "Cheese", dx: 2 },
+      onion: { x: 500, y: canvas.height - 100, color: "#ffffff", label: "Onion", dx: 2 },
+      ajvar: { x: 800, y: canvas.height - 100, color: "#f44336", label: "Ajvar", dx: 2 }
+    };
+
+    let currentChip;
+    let score = 0;
+    let combo = 0;
+    let dips = 0;
+    const maxDips = 10;
+    const splashes = [];
+    let gameRunning = false;
+
+    function updateProgressBar() {
+      const percent = (dips / maxDips) * 100;
+      progressBar.style.width = percent + "%";
+    }
+
+    function initChip() {
+      currentChip = {
+        ...chipTypes[Math.floor(Math.random() * chipTypes.length)],
+        x: canvas.width / 2,
+        y: 100,
+        radius: 25,
+        velocityY: 0,
+        gravity: 0.5,
+        flap: -10
+      };
+    }
+
+    function drawChip() {
+      ctx.fillStyle = currentChip.color;
+      ctx.beginPath();
+      if (currentChip.shape === "triangle") {
+        ctx.moveTo(currentChip.x, currentChip.y - currentChip.radius);
+        ctx.lineTo(currentChip.x - currentChip.radius, currentChip.y + currentChip.radius);
+        ctx.lineTo(currentChip.x + currentChip.radius, currentChip.y + currentChip.radius);
+        ctx.closePath();
+        ctx.fill();
+      } else if (currentChip.shape === "wave") {
+        const width = currentChip.radius * 2;
+        const height = currentChip.radius;
+        const waveCount = 3;
+        const startX = currentChip.x - currentChip.radius;
+        const startY = currentChip.y;
+        ctx.moveTo(startX, startY);
+        for (let i = 0; i < waveCount; i++) {
+          const dx = width / waveCount;
+          const cx = startX + dx * i + dx / 2;
+          const cy = startY + (i % 2 === 0 ? -height : height);
+          ctx.quadraticCurveTo(cx, cy, startX + dx * (i + 1), startY);
+        }
+        ctx.lineTo(currentChip.x + currentChip.radius, currentChip.y + height);
+        ctx.lineTo(currentChip.x - currentChip.radius, currentChip.y + height);
+        ctx.closePath();
+        ctx.fill();
+      } else {
+        ctx.arc(currentChip.x, currentChip.y, currentChip.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.closePath();
+      }
+    }
+
+    function drawSauces() {
+      Object.entries(sauceMap).forEach(([key, sauce]) => {
+        ctx.beginPath();
+        ctx.arc(sauce.x, sauce.y, 40, 0, Math.PI * 2);
+        ctx.fillStyle = sauce.color;
+        ctx.fill();
+        ctx.closePath();
+
+        ctx.fillStyle = "#000";
+        ctx.font = "18px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText(sauce.label, sauce.x, sauce.y + 60);
+      });
+    }
+
+    function drawScore() {
+      ctx.fillStyle = "#000";
+      ctx.font = "24px Arial";
+      ctx.fillText("Score: " + score, 20, 40);
+      ctx.fillText("Combo: " + combo, 20, 70);
+    }
+
+    function drawSplashes() {
+      splashes.forEach((splash, index) => {
+        ctx.beginPath();
+        ctx.arc(splash.x, splash.y, splash.radius, 0, Math.PI * 2);
+        ctx.fillStyle = splash.color;
+        ctx.globalAlpha = splash.alpha;
+        ctx.fill();
+        ctx.globalAlpha = 1.0;
+        ctx.closePath();
+        splash.alpha -= 0.01;
+        if (splash.alpha <= 0) {
+          splashes.splice(index, 1);
+        }
+      });
+    }
+
+    function updateSauces() {
+      Object.values(sauceMap).forEach(sauce => {
+        sauce.x += sauce.dx;
+        if (sauce.x > canvas.width - 40 || sauce.x < 40) sauce.dx *= -1;
+      });
+    }
+
+    function update() {
+      if (!gameRunning) return;
+
+      currentChip.velocityY += currentChip.gravity;
+      currentChip.y += currentChip.velocityY;
+
+      updateSauces();
+
+      if (currentChip.y + currentChip.radius > canvas.height - 100) {
+        dips++;
+        updateProgressBar();
+        const targetSauce = sauceMap[currentChip.sauce];
+        if (Math.abs(currentChip.x - targetSauce.x) < 50) {
+          score++;
+          combo++;
+          splashes.push({ x: currentChip.x, y: canvas.height - 100, radius: 60, color: targetSauce.color, alpha: 0.4 });
+          hitSound.currentTime = 0;
+          hitSound.play();
+        } else {
+          combo = 0;
+          splashes.push({ x: currentChip.x, y: canvas.height - 100, radius: 60, color: "#000", alpha: 0.3 });
+          missSound.currentTime = 0;
+          missSound.play();
+        }
+
+        if (dips >= maxDips) {
+          document.getElementById("finalScore").textContent = score;
+          document.getElementById("restartScreen").style.display = "flex";
+          gameRunning = false;
+          return;
+        }
+
+        initChip();
+      }
+    }
+
+    function render() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawSauces();
+      drawScore();
+      drawChip();
+      drawSplashes();
+    }
+
+    function gameLoop() {
+      update();
+      render();
+      requestAnimationFrame(gameLoop);
+    }
+
+    function startGame() {
+      document.getElementById("startScreen").style.display = "none";
+      bgMusic.play();
+      gameRunning = true;
+      score = 0;
+      combo = 0;
+      dips = 0;
+      updateProgressBar();
+      initChip();
+    }
+
+    function restartGame() {
+      document.getElementById("restartScreen").style.display = "none";
+      gameRunning = true;
+      score = 0;
+      combo = 0;
+      dips = 0;
+      updateProgressBar();
+      initChip();
+    }
+
+    canvas.addEventListener("click", () => {
+      if (!gameRunning) return;
+      currentChip.velocityY = currentChip.flap;
+    });
+
+    window.addEventListener("resize", () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    });
+
+    gameLoop();
+  </script>
+</body>
+</html>
